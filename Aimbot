@@ -1,0 +1,180 @@
+-- Serviços
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Configurações
+local aimlockEnabled = false
+local espEnabled = true
+local aimSmoothness = 0.15
+
+-- UI
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "CustomESP_UI"
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 200, 0, 140)
+MainFrame.Position = UDim2.new(0, 10, 0, 10)
+MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+MainFrame.BorderSizePixel = 0
+
+local CloseButton = Instance.new("TextButton", MainFrame)
+CloseButton.Text = "X"
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -35, 0, 5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
+
+local MinimizeButton = Instance.new("TextButton", ScreenGui)
+MinimizeButton.Text = "-"
+MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
+MinimizeButton.Position = UDim2.new(0, 10, 0, 10)
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(0, 80, 0)
+MinimizeButton.Visible = false
+
+CloseButton.MouseButton1Click:Connect(function()
+	MainFrame.Visible = false
+	MinimizeButton.Visible = true
+end)
+
+MinimizeButton.MouseButton1Click:Connect(function()
+	MainFrame.Visible = true
+	MinimizeButton.Visible = false
+end)
+
+-- Botões de Toggle
+local AimlockToggle = Instance.new("TextButton", MainFrame)
+AimlockToggle.Size = UDim2.new(1, -20, 0, 30)
+AimlockToggle.Position = UDim2.new(0, 10, 0, 40)
+AimlockToggle.Text = "Aimlock: ON"
+AimlockToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+local ESPToggle = Instance.new("TextButton", MainFrame)
+ESPToggle.Size = UDim2.new(1, -20, 0, 30)
+ESPToggle.Position = UDim2.new(0, 10, 0, 80)
+ESPToggle.Text = "ESP: ON"
+ESPToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+AimlockToggle.MouseButton1Click:Connect(function()
+	aimlockEnabled = not aimlockEnabled
+	AimlockToggle.Text = "Aimlock: " .. (aimlockEnabled and "ON" or "OFF")
+end)
+
+ESPToggle.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	ESPToggle.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+end)
+
+-- ESP
+local function createESPBox(player)
+	local box = Drawing.new("Square")
+	box.Thickness = 1
+	box.Color = Color3.new(1, 1, 1)
+	box.Transparency = 1
+	box.Filled = false
+
+	local healthText = Drawing.new("Text")
+	healthText.Size = 14
+	healthText.Color = Color3.new(0, 1, 0)
+	healthText.Center = true
+	healthText.Outline = true
+
+	return {
+		box = box,
+		health = healthText,
+		player = player
+	}
+end
+
+local espObjects = {}
+
+local function updatePlayers()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and not espObjects[player] then
+			espObjects[player] = createESPBox(player)
+		end
+	end
+end
+
+Players.PlayerAdded:Connect(updatePlayers)
+RunService.Heartbeat:Connect(updatePlayers)
+
+Players.PlayerRemoving:Connect(function(player)
+	if espObjects[player] then
+		espObjects[player].box:Remove()
+		espObjects[player].health:Remove()
+		espObjects[player] = nil
+	end
+end)
+
+-- Aimlock (suave e funcional)
+local function getClosestTarget()
+	local closest = nil
+	local shortestDist = math.huge
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local screenPos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+			if onScreen then
+				local distance = (Vector2.new(screenPos.X, screenPos.Y) - Camera.ViewportSize / 2).Magnitude
+				if distance < shortestDist then
+					shortestDist = distance
+					closest = player
+				end
+			end
+		end
+	end
+
+	return closest
+end
+
+-- Render loop
+RunService.RenderStepped:Connect(function()
+	updatePlayers()
+
+	for player, data in pairs(espObjects) do
+		local char = player.Character
+		if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
+			local root = char.HumanoidRootPart
+			local hum = char.Humanoid
+			local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+
+			if onScreen and espEnabled then
+				local distance = (Camera.CFrame.Position - root.Position).Magnitude
+
+				-- Escala proporcional
+				local scale = math.clamp(1 / (distance / 30), 0.3, 1)
+				local baseHeight = 120
+				local baseWidth = 60
+
+				local height = baseHeight * scale
+				local width = baseWidth * scale
+
+				data.box.Visible = true
+				data.box.Size = Vector2.new(width, height)
+				data.box.Position = Vector2.new(pos.X - width / 2, pos.Y - height / 2)
+
+				data.health.Visible = true
+				data.health.Text = math.floor(hum.Health) .. " HP"
+				data.health.Size = 14 * scale
+				data.health.Position = Vector2.new(pos.X, pos.Y - height / 2 - (18 * scale))
+			else
+				data.box.Visible = false
+				data.health.Visible = false
+			end
+		end
+	end
+
+	if aimlockEnabled then
+		local target = getClosestTarget()
+		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+			local targetPos = target.Character.HumanoidRootPart.Position
+			local current = Camera.CFrame.Position + Camera.CFrame.LookVector * 100
+			local direction = (targetPos - Camera.CFrame.Position).Unit
+			local smoothed = current:Lerp(Camera.CFrame.Position + direction * 100, aimSmoothness)
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, smoothed)
+		end
+	end
+end)
