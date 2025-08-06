@@ -13,12 +13,36 @@ local predictEnabled = true
 local hitboxEnabled = false
 local aimSmoothness = 0.15
 
+local speedLevels = {2, 4, 8}
+local currentSpeedIndex = 0 -- 0 = off (1x)
+
+-- Função para aplicar velocidade no humanoide do jogador
+local function applySpeed()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            if currentSpeedIndex == 0 then
+                humanoid.WalkSpeed = 16
+            else
+                humanoid.WalkSpeed = 16 * speedLevels[currentSpeedIndex]
+            end
+        end
+    end
+end
+
+-- Aplica velocidade no respawn do personagem
+LocalPlayer.CharacterAdded:Connect(function()
+    wait(0.5) -- aguarda o humanoide estar pronto
+    applySpeed()
+end)
+
 -- UI
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 ScreenGui.Name = "CustomESP_UI"
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 200, 0, 220)
+MainFrame.Size = UDim2.new(0, 200, 0, 260)
 MainFrame.Position = UDim2.new(0, 10, 0, 10)
 MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 MainFrame.BorderSizePixel = 0
@@ -70,6 +94,12 @@ HitboxToggle.Size = UDim2.new(1, -20, 0, 30)
 HitboxToggle.Position = UDim2.new(0, 10, 0, 160)
 HitboxToggle.Text = "Hitbox: OFF"
 HitboxToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+local SpeedToggle = Instance.new("TextButton", MainFrame)
+SpeedToggle.Size = UDim2.new(1, -20, 0, 30)
+SpeedToggle.Position = UDim2.new(0, 10, 0, 200)
+SpeedToggle.Text = "Speed: OFF"
+SpeedToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
 AimlockToggle.MouseButton1Click:Connect(function()
 	aimlockEnabled = not aimlockEnabled
@@ -147,6 +177,21 @@ HitboxToggle.MouseButton1Click:Connect(function()
 			end
 		end
 	end
+end)
+
+SpeedToggle.MouseButton1Click:Connect(function()
+	currentSpeedIndex = currentSpeedIndex + 1
+	if currentSpeedIndex > #speedLevels then
+		currentSpeedIndex = 0
+	end
+
+	if currentSpeedIndex == 0 then
+		SpeedToggle.Text = "Speed: OFF"
+	else
+		SpeedToggle.Text = "Speed: " .. speedLevels[currentSpeedIndex] .. "x"
+	end
+
+	applySpeed()
 end)
 
 -- ESP
@@ -279,4 +324,3 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 end)
-
