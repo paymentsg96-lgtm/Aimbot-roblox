@@ -9,6 +9,8 @@ local Camera = workspace.CurrentCamera
 -- Configurações
 local aimlockEnabled = false
 local espEnabled = true
+local predictEnabled = true
+local hitboxEnabled = false
 local aimSmoothness = 0.15
 
 -- UI
@@ -16,7 +18,7 @@ local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"
 ScreenGui.Name = "CustomESP_UI"
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 200, 0, 140)
+MainFrame.Size = UDim2.new(0, 200, 0, 220)
 MainFrame.Position = UDim2.new(0, 10, 0, 10)
 MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 MainFrame.BorderSizePixel = 0
@@ -57,6 +59,18 @@ ESPToggle.Position = UDim2.new(0, 10, 0, 80)
 ESPToggle.Text = "ESP: ON"
 ESPToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
+local PredictToggle = Instance.new("TextButton", MainFrame)
+PredictToggle.Size = UDim2.new(1, -20, 0, 30)
+PredictToggle.Position = UDim2.new(0, 10, 0, 120)
+PredictToggle.Text = "Predict: ON"
+PredictToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+local HitboxToggle = Instance.new("TextButton", MainFrame)
+HitboxToggle.Size = UDim2.new(1, -20, 0, 30)
+HitboxToggle.Position = UDim2.new(0, 10, 0, 160)
+HitboxToggle.Text = "Hitbox: OFF"
+HitboxToggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
 AimlockToggle.MouseButton1Click:Connect(function()
 	aimlockEnabled = not aimlockEnabled
 	AimlockToggle.Text = "Aimlock: " .. (aimlockEnabled and "ON" or "OFF")
@@ -65,6 +79,74 @@ end)
 ESPToggle.MouseButton1Click:Connect(function()
 	espEnabled = not espEnabled
 	ESPToggle.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+end)
+
+PredictToggle.MouseButton1Click:Connect(function()
+	predictEnabled = not predictEnabled
+	PredictToggle.Text = "Predict: " .. (predictEnabled and "ON" or "OFF")
+end)
+
+local hitboxVisuals = {}
+
+HitboxToggle.MouseButton1Click:Connect(function()
+	hitboxEnabled = not hitboxEnabled
+	HitboxToggle.Text = "Hitbox: " .. (hitboxEnabled and "ON" or "OFF")
+
+	for _, player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = player.Character.HumanoidRootPart
+
+			-- Remove hitbox visual anterior se existir
+			if hitboxVisuals[player] then
+				hitboxVisuals[player]:Destroy()
+				hitboxVisuals[player] = nil
+			end
+
+			if hitboxEnabled then
+				-- Salva tamanho original se ainda não salvo
+				if not hrp:FindFirstChild("OriginalSize") then
+					local originalSize = Instance.new("Vector3Value")
+					originalSize.Name = "OriginalSize"
+					originalSize.Value = hrp.Size
+					originalSize.Parent = hrp
+				end
+				hrp.Size = Vector3.new(20, 20, 20)
+
+				-- Cria a parte visual
+				local visualPart = Instance.new("Part")
+				visualPart.Name = "HitboxVisual"
+				visualPart.Transparency = 0.5
+				visualPart.Anchored = false
+				visualPart.CanCollide = false
+				visualPart.Material = Enum.Material.Neon
+				visualPart.Color = Color3.new(0, 0, 1) -- Azul neon
+				visualPart.Size = hrp.Size
+				visualPart.CFrame = hrp.CFrame
+				visualPart.Parent = hrp.Parent
+
+				-- Atualiza a posição no RenderStepped
+				local connection
+				connection = RunService.RenderStepped:Connect(function()
+					if visualPart and visualPart.Parent then
+						visualPart.CFrame = hrp.CFrame
+					else
+						if connection then
+							connection:Disconnect()
+						end
+					end
+				end)
+
+				hitboxVisuals[player] = visualPart
+			else
+				-- Restaura tamanho original
+				local originalSize = hrp:FindFirstChild("OriginalSize")
+				if originalSize then
+					hrp.Size = originalSize.Value
+					originalSize:Destroy()
+				end
+			end
+		end
+	end
 end)
 
 -- ESP
@@ -107,9 +189,14 @@ Players.PlayerRemoving:Connect(function(player)
 		espObjects[player].health:Remove()
 		espObjects[player] = nil
 	end
+	-- Remove hitbox visual se existir
+	if hitboxVisuals[player] then
+		hitboxVisuals[player]:Destroy()
+		hitboxVisuals[player] = nil
+	end
 end)
 
--- Aimlock (suave e funcional)
+-- Aimlock (normal ou preditivo)
 local function getClosestTarget()
 	local closest = nil
 	local shortestDist = math.huge
@@ -130,7 +217,7 @@ local function getClosestTarget()
 	return closest
 end
 
--- Render loop
+-- Loop de renderização
 RunService.RenderStepped:Connect(function()
 	updatePlayers()
 
@@ -143,14 +230,18 @@ RunService.RenderStepped:Connect(function()
 
 			if onScreen and espEnabled then
 				local distance = (Camera.CFrame.Position - root.Position).Magnitude
-
-				-- Escala proporcional
 				local scale = math.clamp(1 / (distance / 30), 0.3, 1)
 				local baseHeight = 120
 				local baseWidth = 60
 
 				local height = baseHeight * scale
 				local width = baseWidth * scale
+
+				-- Cor dinâmica
+				local hpPercent = hum.Health / hum.MaxHealth
+				local color = Color3.new(1 - hpPercent, hpPercent, 0) -- Vermelho → Verde
+				data.box.Color = color
+				data.health.Color = color
 
 				data.box.Visible = true
 				data.box.Size = Vector2.new(width, height)
@@ -170,11 +261,22 @@ RunService.RenderStepped:Connect(function()
 	if aimlockEnabled then
 		local target = getClosestTarget()
 		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-			local targetPos = target.Character.HumanoidRootPart.Position
+			local hrp = target.Character.HumanoidRootPart
+			local targetPos = hrp.Position
+
+			if predictEnabled then
+				local velocity = hrp.Velocity
+				local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
+				local predictionTime = distance / 150
+				targetPos = targetPos + (velocity * predictionTime)
+			end
+
 			local current = Camera.CFrame.Position + Camera.CFrame.LookVector * 100
 			local direction = (targetPos - Camera.CFrame.Position).Unit
 			local smoothed = current:Lerp(Camera.CFrame.Position + direction * 100, aimSmoothness)
+
 			Camera.CFrame = CFrame.new(Camera.CFrame.Position, smoothed)
 		end
 	end
 end)
+
