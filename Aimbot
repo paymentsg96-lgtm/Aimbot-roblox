@@ -16,6 +16,9 @@ local aimSmoothness = 0.15
 local speedLevels = {2, 4, 8}
 local currentSpeedIndex = 0 -- 0 = off (1x)
 
+-- Variável para alvo fixo
+local fixedTarget = nil
+
 -- Função para aplicar velocidade no humanoide do jogador
 local function applySpeed()
     local character = LocalPlayer.Character
@@ -126,14 +129,12 @@ HitboxToggle.MouseButton1Click:Connect(function()
 		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
 			local hrp = player.Character.HumanoidRootPart
 
-			-- Remove hitbox visual anterior se existir
 			if hitboxVisuals[player] then
 				hitboxVisuals[player]:Destroy()
 				hitboxVisuals[player] = nil
 			end
 
 			if hitboxEnabled then
-				-- Salva tamanho original se ainda não salvo
 				if not hrp:FindFirstChild("OriginalSize") then
 					local originalSize = Instance.new("Vector3Value")
 					originalSize.Name = "OriginalSize"
@@ -142,19 +143,17 @@ HitboxToggle.MouseButton1Click:Connect(function()
 				end
 				hrp.Size = Vector3.new(20, 20, 20)
 
-				-- Cria a parte visual
 				local visualPart = Instance.new("Part")
 				visualPart.Name = "HitboxVisual"
 				visualPart.Transparency = 0.5
 				visualPart.Anchored = false
 				visualPart.CanCollide = false
 				visualPart.Material = Enum.Material.Neon
-				visualPart.Color = Color3.new(0, 0, 1) -- Azul neon
+				visualPart.Color = Color3.new(0, 0, 1)
 				visualPart.Size = hrp.Size
 				visualPart.CFrame = hrp.CFrame
 				visualPart.Parent = hrp.Parent
 
-				-- Atualiza a posição no RenderStepped
 				local connection
 				connection = RunService.RenderStepped:Connect(function()
 					if visualPart and visualPart.Parent then
@@ -168,7 +167,6 @@ HitboxToggle.MouseButton1Click:Connect(function()
 
 				hitboxVisuals[player] = visualPart
 			else
-				-- Restaura tamanho original
 				local originalSize = hrp:FindFirstChild("OriginalSize")
 				if originalSize then
 					hrp.Size = originalSize.Value
@@ -234,15 +232,26 @@ Players.PlayerRemoving:Connect(function(player)
 		espObjects[player].health:Remove()
 		espObjects[player] = nil
 	end
-	-- Remove hitbox visual se existir
 	if hitboxVisuals[player] then
 		hitboxVisuals[player]:Destroy()
 		hitboxVisuals[player] = nil
 	end
+	if fixedTarget and fixedTarget.Parent == player.Character then
+		fixedTarget = nil
+	end
 end)
 
--- Aimlock (normal ou preditivo)
+-- Função para checar se alvo é válido
+local function isTargetValid(target)
+	return target and target.Parent and target.Parent:FindFirstChild("Humanoid") and target.Parent.Humanoid.Health > 0
+end
+
+-- Função modificada para travar alvo
 local function getClosestTarget()
+	if fixedTarget and isTargetValid(fixedTarget) then
+		return fixedTarget
+	end
+
 	local closest = nil
 	local shortestDist = math.huge
 
@@ -253,14 +262,21 @@ local function getClosestTarget()
 				local distance = (Vector2.new(screenPos.X, screenPos.Y) - Camera.ViewportSize / 2).Magnitude
 				if distance < shortestDist then
 					shortestDist = distance
-					closest = player
+					closest = player.Character.HumanoidRootPart
 				end
 			end
 		end
 	end
 
+	fixedTarget = closest
 	return closest
 end
+
+RunService.Heartbeat:Connect(function()
+	if fixedTarget and not isTargetValid(fixedTarget) then
+		fixedTarget = nil
+	end
+end)
 
 -- Loop de renderização
 RunService.RenderStepped:Connect(function()
@@ -282,9 +298,8 @@ RunService.RenderStepped:Connect(function()
 				local height = baseHeight * scale
 				local width = baseWidth * scale
 
-				-- Cor dinâmica
 				local hpPercent = hum.Health / hum.MaxHealth
-				local color = Color3.new(1 - hpPercent, hpPercent, 0) -- Vermelho → Verde
+				local color = Color3.new(1 - hpPercent, hpPercent, 0)
 				data.box.Color = color
 				data.health.Color = color
 
@@ -305,13 +320,11 @@ RunService.RenderStepped:Connect(function()
 
 	if aimlockEnabled then
 		local target = getClosestTarget()
-		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-			local hrp = target.Character.HumanoidRootPart
-			local targetPos = hrp.Position
-
+		if target then
+			local targetPos = target.Position
 			if predictEnabled then
-				local velocity = hrp.Velocity
-				local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
+				local velocity = target.Velocity
+				local distance = (Camera.CFrame.Position - target.Position).Magnitude
 				local predictionTime = distance / 150
 				targetPos = targetPos + (velocity * predictionTime)
 			end
